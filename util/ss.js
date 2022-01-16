@@ -30,6 +30,7 @@ async function takeScreenshot(url) {
 
     await browser.close();
   } catch (error) {
+    console.log(error);
     return { success: false, url, isBlocked: false } ;
   }
     return { success: true, url, isBlocked: false } ;
