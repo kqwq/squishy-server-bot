@@ -115,16 +115,16 @@ client.on('ready', async () => {
 
 
   // Register global slash commands
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+  // await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
 
-  // Delete all commands
+  // // Delete all commands
 
 
-  //Register local slash commands
-  await rest.put(
-    Routes.applicationGuildCommands(process.env.CLIENT_ID, "910970288580206622"),
-    { body: commands },
-  );
+  // //Register local slash commands
+  // await rest.put(
+  //   Routes.applicationGuildCommands(process.env.CLIENT_ID, "372895163279998976"),
+  //   { body: commands },
+  // );
 
   console.log('Started refreshing application (/) commands.');
 });
@@ -164,10 +164,11 @@ client.on('interactionCreate', async interaction => {
       await interaction.editReply({ content: 'This website is blocked.' })
     } else if (success) {
       await interaction.editReply({
-        content: 'Here\'s your screenshot of ' + url,
-        files: ['./storage/example.png'] });
+        content: 'Here\'s your screenshot of `' + url + '`',
+        files: ['./storage/example.png'] 
+      })
     } else {
-      await interaction.editReply(`Could not take screenshot of ${url}`);
+      await interaction.editReply(`Could not take screenshot of \`${url}\``);
     }
   }
 });
