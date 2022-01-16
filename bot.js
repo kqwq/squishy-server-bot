@@ -1,6 +1,6 @@
 import { Client, Intents } from 'discord.js';
-import { REST } from '@discordjs/rest';
-import { Routes } from 'discord-api-types/v9';
+// import { REST } from '@discordjs/rest';
+// import { Routes } from 'discord-api-types/v9';
 import { takeScreenshot } from './util/ss.js';
 import fs from 'fs';
 import dotenv from 'dotenv'; 
