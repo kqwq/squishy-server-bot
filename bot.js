@@ -3,12 +3,12 @@ import { REST } from '@discordjs/rest';
 import { Routes } from 'discord-api-types/v9';
 import { takeScreenshot } from './util/ss.js';
 import fs from 'fs';
-import dotenv from 'dotenv';
+import dotenv from 'dotenv'; 
 
 dotenv.config();
 const client = new Client({ intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES] });
 const config = JSON.parse(fs.readFileSync('./config.json'));
-const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
+//const rest = new REST({ version: '9' }).setToken(process.env.DISCORD_TOKEN);
 
 let spellcheckWords = config.spellcheckWords;
 
