@@ -1,5 +1,7 @@
 ### Caterpillar Coin - A Discord bot
 
-`npm install`
+`git clone https://github.com/kqwq/squishy-server-bot.git caterpillar`
 
-`npm run start`
+`cd caterpillar`
+
+`npm install && npm run start`
