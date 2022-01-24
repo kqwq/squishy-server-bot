@@ -99,4 +99,4 @@ async function fetchKA(route, params) {
   return json
 }
 
-export { fetchKA }
+export { fetchProxy, fetchKA }

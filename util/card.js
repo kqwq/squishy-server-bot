@@ -1,6 +1,6 @@
 import { MessageEmbed, MessageAttachment } from 'discord.js';
-import { svgToPng } from 'svg-png-converter';
-import { fetchKA } from "./KAProxy.js"
+import { svg2png } from 'svg-png-converter';
+import { fetchKA } from "./proxyAPIs.js"
 import fs from "fs";
 
 
@@ -76,17 +76,41 @@ async function postCard(db, query, interaction, isDMs) {
   // Get scratchpad data
   let scratchpad = await getQuery(db, `SELECT * FROM scratchpads WHERE programId = '${row.id}'`);
 
-
+  // Get parent key if type is reply
+  if (row.type === "reply") {
+    let parentRow = await getQuery(db, `SELECT * FROM posts WHERE id = '${row.parentId}'`);
+    row.key = parentRow.key;
+  }
 
   // Create embed
   let embed = new MessageEmbed({
     title: capitalize(row.type) + " by " + profile.nickname,
     description: row.content.length > 4090 ? row.content.slice(0, 4090) + '...' : row.content,
+    thumbnail: {
+      url: "attachment://avatar.png"
+    },
+    timestamp: row.date,
+    footer: {
+      text: `From ${scratchpad.title}`,
+      icon_url: `https://www.khanacademy.org/cs/i/${row.programId}/latest.png`,
+    },
   })
+
+  if (row.upvotes !== 1) {
+    embed.addField("Votes", row.upvotes, true);
+  }
+  if (row.flags !== "") {
+    embed.addField("Flags", row.flags, true);
+  }
+
+  embed.addField("Links", `[Thread](https://www.khanacademy.org/cs/d/${row.programId}?qa_expand_key=${row.key}) / [Profile](https://www.khanacademy.org/profile/${row.avatarKaid})`, true);
+
+  let avatarFile = new MessageAttachment(pngPath, "avatar.png");
+
 
   let message = {
     embeds: [embed],
-    files: [],
+    files: [avatarFile],
   }
   if (isDMs) { 
     interaction.reply(message); 
