@@ -20,7 +20,7 @@ export default {
 
     let term = args.getString('term');
     term = term.replace(/\%/g, '\\%');
-    let query = `SELECT * FROM posts WHERE content LIKE '%${term}%' ORDER BY date ASC`;
+    let query = `SELECT * FROM posts WHERE content LIKE '%${term}%' ORDER BY date ASC LIMIT 1`;
     await postCard(db, query, interaction);
   }
 }

@@ -2,6 +2,7 @@ import { MessageEmbed, MessageAttachment } from 'discord.js';
 import { svg2png } from 'svg-png-converter';
 import { fetchKA } from "./proxyAPIs.js"
 import fs from "fs";
+import fetch from 'node-fetch';
 
 
 async function getQuery(db, query) {
@@ -63,7 +64,7 @@ async function postCard(db, query, interaction, isDMs) {
     pngPath = `./storage/avatar/${avatarName}.png`
     if (!fs.existsSync(pngPath)) {
       // download avatar
-      await downloadFile(avatarSrc, avatarPath)
+      await downloadFile(avatarSrc, srcPath)
       if (extension === "svg") {
         // convert svg to png
         let outputBuffer = await svg2png({ 
@@ -71,6 +72,8 @@ async function postCard(db, query, interaction, isDMs) {
           encoding: 'buffer', 
           format: 'png',
         })
+        // delete svg
+        fs.unlinkSync(srcPath)
         fs.writeFileSync(pngPath, outputBuffer)
       }
     }
