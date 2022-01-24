@@ -114,14 +114,12 @@ export default {
       fs.writeFileSync(`./temp/cringe.json`, cringePosts.map(p => p.content).join("\n\n\n"));
     } 
 
-    // Account age
-    let accountAge = Math.round((new Date() - new Date(myProfile.created)) / (1000 * 60 * 60 * 24));
-    
     
     /* Gossip */
     let visibleMentions = []
     let invisibleMentions = []
     let hasGossip = allMentions.length > 0
+    let invisibleGossip = ""
     if (hasGossip) {
       /*
       Ok, this is a little hard to explain. 
@@ -184,8 +182,7 @@ export default {
         }
         allGossip[i].formatted = `- *${allGossip[i].content}* by [${allGossip[i].nickname}](https://www.khanacademy.org/profile/${allGossip[i].author})`
       }
-      let invisibleGossip = allGossip.slice(3).join("\n")
-
+      invisibleGossip = allGossip.slice(3).join("\n")
 
 
 
@@ -199,6 +196,43 @@ export default {
       }));
     } 
 
+    /* Patterns */
+
+    // Account age
+    let accountDays = Math.round((new Date() - new Date(myProfile.joined)) / (1000 * 60 * 60 * 24));
+    let accountYears = Math.round(accountDays / 365);
+
+    // Posts
+    let notMuchCommentsBlurb = ""
+    if (myPosts.length < 10) {
+      notMuchCommentsBlurb = " Honestly that's not a lot, maybe you should comment more often :smirk:."
+    }
+
+    // askVsAnswer
+    let questionCount = 86897
+    let answerCount = 29228
+    let overallRatio = questionCount / answerCount
+    let askVsAnswer = ""
+    let askVsAnswerHigher = false
+    let reasonToBeProud = ""
+    let myQuestionsLength = myPosts.filter(p => p.type === "question").length
+    let myAnswersLength = myPosts.filter(p => p.type === "answer").length
+    let myRatio = myQuestionsLength / myAnswersLength
+    if (myRatio >= overallRatio && myQuestionsLength > 2) {
+      praises.push("curious")
+      reasonToBeProud = "You have such an open mind"
+      askVsAnswer = `asked questions ${(myAnswersLength/myQuestionsLength).toFixed(1)} as often as you answered them`
+      askVsAnswerHigher = ((myRatio - overallRatio) * 100).toFixed(0)
+    } else if (myRatio < overallRatio && myAnswersLength > 2) {
+      praises.push("altruistic")
+      reasonToBeProud = "You should be proud of yourself for providing so many helpful answers to the community"
+      askVsAnswer = `answered questions ${(myAnswersLength/myQuestionsLength).toFixed(1)} as often as you asked them`
+      askVsAnswerHigher = (1/(1/myRatio - 1/overallRatio) * 100).toFixed(0)
+    } else {
+      praises.push("observant")
+      reasonToBeProud = "You should help people out more often"
+      askVsAnswer = "didn't use the question/answer tab very often."
+    }
 
 
     /* Get friends */
@@ -227,9 +261,53 @@ export default {
 
     // Gather stats
     let friendships = kaidCounts.filter(item => item.count > 1);
-    let top3 = friendships.slice(0, 3);
-    let usernames = await Promise.all(top3.map(item => fetchProxy(`profile`, item.kaid).then(res => res.json()).then(json => json.data.user.username)));
-   // let reply = `${userInupt} has a crush on ${usernames.join(', ')}.`;
+    let hasFriends = friendships.length > 0;
+    let bestFriendsTxt = ""
+    if (hasFriends) {
+      let top3 = friendships.slice(1, 4);
+      let usernames = await Promise.all(top3.map(item => fetchProxy(`profile`, item.kaid).then(res => res.json())
+      .then(json => `[${json.data?.user?.nickname || "unknown"}](https://www.khanacademy.org/profile/${json.data?.user?.id})`)));
+      bestFriendsTxt = `Some of your best friends are ${usernames.join(', ')}`;
+      fs.writeFileSync(`./temp/bestFriends.txt`, friendships.map(item => `${item.kaid} ${item.count}`).join('\n'));
+    }
+
+    /* Crush */
+    let crush = friendships?.[0]
+    let hasCrush= crush.count > 10
+    let crushEarlyContact = new Date()
+    let crushNickname
+    let crushRatio
+    if (hasCrush) {
+      for (let row of rows) {
+        let date = new Date(row.date)
+        if (date < crushEarlyContact) {
+          crushEarlyContact = date
+        }
+      }
+      crushEarlyContact = `${crushEarlyContact.getMonth} ${crushEarlyContact.getDate}, ${crushEarlyContact.getFullYear}`
+      let crushJson = await fetchKA(`profile`, crush.kaid)
+      crushNickname = crushJson.data?.user?.nickname || crush.kaid
+      let friendInteractions = friendships.reduce((acc, item) => acc + item.count, 0)
+      let crushInteractions = crush.count
+      crushRatio = crushInteractions / friendInteractions
+    }
+
+    /* Leaks */
+    let emails = []
+    for (let post of myPosts) {
+      // Check for email string
+      let matches = post.content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g)
+      matches?.forEach(email => {
+        emails.push(email)
+      })
+    }
+    let leakBlurb = ""
+    if (emails.length > 0) {
+      leakBlurb = `P.S. You've leaked ${emails.length} emails. You should probably hide them.`
+    }
+
+    
+    
 
     // Compile sections
     let sectionAbout = `${myNick} is a ${praises} person.${roleplayBlurb} It appears that ${myNick}'s pronouns are ${pronounGrammar[mostPopularPronoun]} (${pronounPercent}%) based on what his friends say. But let's see what your friends really have to say about you, ${myNick}:`
@@ -239,15 +317,15 @@ export default {
     :
     `It doesn't look like you're very popular, ${myNick}. You've never been mentioned by your friends - oh wait, you don't have any!`
 
-    let sectionPatterns = `You created your account an impressive ${accountAge} years ago! Since then, you've commented ${numOfComments} times on the top programs.${notMuchCommentsBlurb} Most notably, you ${askVsAnswer}. That's ${askVsAnswerHigher}% higher than average. You should be proud of youself for ${reasonToBeProud}!`
+    let sectionPatterns = `You created your account an impressive ${accountYears} years ago! Since then, you've commented ${myPosts.length.toLocaleString()} times on the top programs.${notMuchCommentsBlurb} Most notably, you ${askVsAnswer}. ${askVsAnswerHigher ? `That's ${askVsAnswerHigher}% higher than average.` : ""} ${reasonToBeProud}!`
 
-    let sectionFriends = hasFriends ? `Now for the fun part... I estimate that you have ${numOfFriends} friends on Khan Academy. The full list is in the file \`friends.txt\`. However, your friends talk more often than you, so maybe they aren't real friends. Some of your best friends are ${bestFriends}.`
+    let sectionFriends = hasFriends ? `Now for the fun part... I estimate that you have ${friendships.length} friends on Khan Academy. The full list is in the file \`friends.txt\`. However, your friends talk more often than you, so maybe they aren't real friends. ${bestFriendsTxt}.`
     :
     `You don't have any friends on Khan Academy. What a loser.`
 
-    let sectionCrush = hasCrush ? `Finally, ${myNick}'s Khan Academy crush. My calculations say there's a ${Math.floor(crushConfidence * 100)}% chance you have a crush on ${crushOn}! How cute! You've known each other since ${crushKnownSince} and have exchanged conversations well over 50 times!` 
+    let sectionCrush = hasCrush ? `Finally, ${myNick}'s Khan Academy crush. My calculations say there's a ${Math.floor(crushRatio * 100)}% chance you have a crush on ${crushNickname}! How cute! You've known each other since ${crushEarlyContact} and have exchanged conversations well over 50 times!` 
     : 
-    `My calculations say there's a ${Math.floor(crushConfidence * 100)}% chance you have a Khan Academy crush. That's right, you probably don't have a crush on anyone. What a shame!`
+    `My calculations say there's a ${Math.floor(crushRatio * 100)}% chance you have a Khan Academy crush. That's right, you probably don't have a crush on anyone. What a shame!`
   
     let desc = `
 **About**
@@ -268,18 +346,22 @@ ${leakBlurb}`;
 
     // Create embed
     let embed = new MessageEmbed({
-      title: 'Summary for ' + userInupt,
+      title: 'Summary for ' + myNick,
       description: desc,
     })
-    let files = []
+    //let files = []
 
 
     // Send message
-    interaction.editReply({
-      embeds: [embed],
-      files: [files]
-    });
+    interaction.editReply("Send via DMs");
 
+
+    
+    // Send to DMs
+    await interaction.member.send({
+      embeds: [embed],
+     // files: [files]
+    })
 
 
     
