@@ -30,7 +30,7 @@ export default {
     let json = await res.json();
     let myProfile = json.data?.user 
     if (!myProfile) {
-      interaction.editReply("Couldn't find the user " + userInupt);
+      interaction.editReply("Couldn't find the user " + usernameInupt);
       return
     }
     let myKaid = myProfile.id
@@ -39,9 +39,9 @@ export default {
 
     /* About */
     let myPosts = await allQuery(db, `SELECT * FROM posts WHERE authorKaid = '${myKaid}0 LIMIT 50000'`);
-    let nickMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%${myNick}%' LIMIT 25000`);
-    let usernameMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%${myUsername}%' LIMIT 25000`);
-    
+    let nickMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%[^a-z]${myNick}[^a-z]%' LIMIT 25000`);
+    let usernameMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%[^a-z]${myUsername}[^a-z]%' LIMIT 25000`);
+    let allMentions = nickMentions.concat(usernameMentions).sort((a, b) => b.upvotes - a.upvotes);
     // Pronoun classifier
     let pronouns = {
       "he": 0,
@@ -54,8 +54,8 @@ export default {
       "they": "they/them",
     }
     let numOfPronouns = 0;
-    for (let i = 0; i < nickMentions.concat(usernameMentions).length; i++) {
-      let post = nickMentions[i];
+    for (let i = 0; i < allMentions.length; i++) {
+      let post = allMentions[i];
       // he/him/his
       if (post.content.match(/\b(he|him|his)\b/)) {
         pronouns.he++;
@@ -79,8 +79,35 @@ export default {
       "pronounPercent": pronounPercent,
 
     }));
-    interaction.editReply("saved")
-    return
+    
+    
+    /* Gossip */
+    let hasGossip = allMentions.length > 0
+    if (hasGossip) {
+      /*
+      Ok, this is a little hard to explain. 
+      Basically, we want the *root* of the post.
+      So if a reply contains a mention, add the root (comment) to the list. 
+      If a comment contains a mention, add the comment to the list because the parentId is 0.
+      */
+      let notificationRoots = []
+      for (let post of allMentions) {
+        notificationRoots.push(post.parentId ? post.parentId : post.id)
+      }
+      notificationRoots = [...new Set(notificationRoots)]
+
+      // Select every post with a parentId or id of the notificationRoots, but don't include posts that myKaid is the author of AND don't include posts where myKaid is the author of a reply
+      let gossip = await allQuery(db, 
+        `SELECT * FROM posts 
+        WHERE (parentId IN (${notificationRoots.join(',')}) OR id IN (${notificationRoots.join(',')})) 
+        AND authorKaid != '${myKaid}' 
+        AND '${myKaid}' NOT IN (SELECT authorKaid FROM posts WHERE parentId = '${myKaid}') 
+        LIMIT 25000`);
+        console.log(gossip.length)
+      fs.writeFileSync(`./gossip.json`, JSON.stringify(gossip));
+    } 
+
+
 
     /* Get friends */
     // Get list of your parent IDs from answers and replies
@@ -89,8 +116,8 @@ export default {
     parentIds = [...new Set(parentIds)];
 
     // Get list of kaids 
-    query = `SELECT authorKaid FROM posts WHERE (type = 'question' OR type = 'comment') AND id IN (${parentIds.join(',')})`;
-    rows = await allQuery(db, query);
+    let query = `SELECT authorKaid FROM posts WHERE (type = 'question' OR type = 'comment') AND id IN (${parentIds.join(',')})`;
+    let rows = await allQuery(db, query);
     let kaids = rows.map(row => row.authorKaid);
     let kaidCounts = []
     kaids.forEach(kaid => {
@@ -113,9 +140,9 @@ export default {
     let reply = `${userInupt} has a crush on ${usernames.join(', ')}.`;
 
     // Compile sections
-    let sectionAbout = `${myNick} is a ${praises} person.${roleplayBlurb} It appears that ${myNick}'s pronouns are ${pronouns} (${pronounPercent}%) based on what his friends say. But let's see what your friends really have to say about you, ${myNick}:`
+    let sectionAbout = `${myNick} is a ${praises} person.${roleplayBlurb} It appears that ${myNick}'s pronouns are ${pronounGrammar[mostPopularPronoun]} (${pronounPercent}%) based on what his friends say. But let's see what your friends really have to say about you, ${myNick}:`
 
-    let sectionGossip = hasGossip ? `${visibleGossip}
+    let sectionGossip = hasGossip ? `${invisibleGossip}
     Your friends mentioned you ${visibleMentions + invisibleMentions} times and talked behind your back ${invisibleMentions} times! It looks like you go by your ${isGoByNickname ? "nickname" : "username"} more than your ${isGoByNickname ? "username" : "nickname"}, but I've included both cases in the file \`gossip.json\` attached below.`
     :
     `It doesn't look like you're very popular, ${myNick}. You've never been mentioned by your friends - oh wait, you don't have any!`

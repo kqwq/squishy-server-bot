@@ -31,7 +31,7 @@ export default {
     let json = await res.json();
     let myProfile = json.data?.user 
     if (!myProfile) {
-      interaction.editReply("Couldn't find the user " + userInupt);
+      interaction.editReply("Couldn't find the user " + usernameInupt);
       return
     }
     let myKaid = myProfile.id
