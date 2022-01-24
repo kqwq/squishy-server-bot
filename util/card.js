@@ -18,7 +18,7 @@ async function getQuery(db, query) {
 
 async function allQuery(db, query) {
   return new Promise((resolve, reject) => {
-    db.get(query, (err, rows) => {
+    db.all(query, (err, rows) => {
       if (err) {
         reject(err);
       } else {
@@ -51,30 +51,36 @@ async function postCard(db, query, interaction, isDMs) {
   let json = await fetchKA(`profile`, row.authorKaid); // Fetch profile
   let profile = json.data.user
   json = await fetchKA(`avatarDataForProfile`, row.authorKaid); // Fetch avatar
-  let avatar = json.data.user
+  let avatar = json.data?.user?.avatar
 
   // Avatar handling
-  let avatarSrc = avatar.imageSrc
-  let [ avatarName, extension ] = avatarSrc.split('/').at(-1).split(".")
-  // check if avatarName exists in ./storage/avatar
-  let srcPath = `./storage/avatar/${avatarName}.${extension}`
-  let pngPath = `./storage/avatar/${avatarName}.png`
-  if (!fs.existsSync(pngPath)) {
-    // download avatar
-    await downloadFile(avatarSrc, avatarPath)
-    if (extension === "svg") {
-      // convert svg to png
-      let outputBuffer = await svg2png({ 
-        input: fs.readFileSync(srcPath), 
-        encoding: 'buffer', 
-        format: 'png',
-      })
-      fs.writeFileSync(pngPath, outputBuffer)
+  let pngPath = ""
+  if (avatar) {
+    let avatarSrc = avatar.imageSrc
+    let [ avatarName, extension ] = avatarSrc.split('/').at(-1).split(".")
+    // check if avatarName exists in ./storage/avatar
+    let srcPath = `./storage/avatar/${avatarName}.${extension}`
+    pngPath = `./storage/avatar/${avatarName}.png`
+    if (!fs.existsSync(pngPath)) {
+      // download avatar
+      await downloadFile(avatarSrc, avatarPath)
+      if (extension === "svg") {
+        // convert svg to png
+        let outputBuffer = await svg2png({ 
+          input: fs.readFileSync(srcPath), 
+          encoding: 'buffer', 
+          format: 'png',
+        })
+        fs.writeFileSync(pngPath, outputBuffer)
+      }
     }
+  } else {
+    pngPath = "./storage/avatar/deleted.png"
   }
+  let avatarFile = new MessageAttachment(pngPath, "avatar.png");
 
   // Get scratchpad data
-  let scratchpad = await getQuery(db, `SELECT * FROM scratchpads WHERE programId = '${row.id}'`);
+  let scratchpad = await getQuery(db, `SELECT * FROM scratchpads WHERE programId = '${row.programId}'`);
 
   // Get parent key if type is reply
   if (row.type === "reply") {
@@ -87,7 +93,7 @@ async function postCard(db, query, interaction, isDMs) {
     title: capitalize(row.type) + " by " + profile.nickname,
     description: row.content.length > 4090 ? row.content.slice(0, 4090) + '...' : row.content,
     thumbnail: {
-      url: "attachment://avatar.png"
+      url: "attachment://avatar.png",
     },
     timestamp: row.date,
     footer: {
@@ -105,7 +111,6 @@ async function postCard(db, query, interaction, isDMs) {
 
   embed.addField("Links", `[Thread](https://www.khanacademy.org/cs/d/${row.programId}?qa_expand_key=${row.key}) / [Profile](https://www.khanacademy.org/profile/${row.avatarKaid})`, true);
 
-  let avatarFile = new MessageAttachment(pngPath, "avatar.png");
 
 
   let message = {
