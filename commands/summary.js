@@ -1,5 +1,5 @@
 import { allQuery } from "../util/card.js";
-import { fetchProxy } from "../util/proxyAPIs.js";
+import { fetchKA, fetchProxy } from "../util/proxyAPIs.js";
 import { MessageEmbed, MessageAttachment } from 'discord.js';
 import fs from "fs";
 
@@ -38,10 +38,25 @@ export default {
     let myNick = myProfile.nickname
 
     /* About */
+    let praises = []
     let myPosts = await allQuery(db, `SELECT * FROM posts WHERE authorKaid = '${myKaid}' LIMIT 50000`);
     let nickMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%${myNick}%' LIMIT 25000`);
     let usernameMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%${myUsername}%' LIMIT 25000`);
     let allMentions = nickMentions.concat(usernameMentions).sort((a, b) => b.upvotes - a.upvotes);
+    if (allMentions.length > 50) {
+      praises.push("famous")
+    } else if (allMentions.length > 25) {
+      praises.push("popular")
+    } else if (allMentions.length > 10) {
+      praises.push("respected")
+    } else if (allMentions.length > 5) {
+      praises.push("normal")
+    } else if (allMentions.length > 1) {
+      praises.push("helpful")
+    } else {
+      praises.push("lonely")
+    }
+    let isGoByNickname = nickMentions > usernameMentions;
     // Pronoun classifier
     let pronouns = {
       "he": 0,
@@ -79,9 +94,33 @@ export default {
       "pronounPercent": pronounPercent,
 
     }));
+
+    // Cringe classifier
+    let criteria = (p) => {
+      return p.content.split("*").length >= 4 && // Contains expressions
+      p.content.length / p.content.split("\n").length < 40 && // Many line breaks
+      !p.content.includes("function()") && // Not code
+      !p.content.includes("var ") &&
+      !p.content.includes("https://www.")  // No links
+    }
+    let cringePosts = myPosts.filter(criteria)
+    let cringeSum = cringePosts.length;
+    let roleplayBlurb = ""
+    let isCringe = false;
+    if (cringeSum > myPosts.length / 4) {
+      isCringe = true;
+      praises.push("cringe-worthy")
+      roleplayBlurb = `I say cringe-worthy because ${cringeSum}/${myPosts.length}, or ${Math.round(cringeSum / myPosts.length * 100)}% of your discussion is classified as roleplay! :pensive:`
+      fs.writeFileSync(`./temp/cringe.json`, cringePosts.map(p => p.content).join("\n\n\n"));
+    } 
+
+    // Account age
+    let accountAge = Math.round((new Date() - new Date(myProfile.created)) / (1000 * 60 * 60 * 24));
     
     
     /* Gossip */
+    let visibleMentions = []
+    let invisibleMentions = []
     let hasGossip = allMentions.length > 0
     if (hasGossip) {
       /*
@@ -90,22 +129,74 @@ export default {
       So if a reply contains a mention, add the root (comment) to the list. 
       If a comment contains a mention, add the comment to the list because the parentId is 0.
       */
-      let notificationRoots = []
-      for (let post of allMentions) {
-        notificationRoots.push(post.parentId ? post.parentId : post.id)
+      let myRoots = []
+      for (let myPost of myPosts) {
+        myRoots.push(myPost.parentId ? myPost.parentId : myPost.id)
       }
-      notificationRoots = [...new Set(notificationRoots)]
-      console.log(notificationRoots)
-      // Select every post that mentions myKaid, but exclude the ones where I'm the author
-      let gossip = await allQuery(db, 
-        `SELECT * FROM posts 
-        WHERE (content LIKE '%${myNick}%' OR content LIKE '%${myUsername}%')  
-        AND parentId NOT IN (${notificationRoots.join(',')})
-        AND id NOT IN (${notificationRoots.join(',')})`)
-        
+      myRoots = [...new Set(myRoots)]
+      
+      for (let post of allMentions) {
+        let mentionRoot = post.parentId ? post.parentId : post.id
+        if (myRoots.includes(mentionRoot)) {
+          visibleMentions.push(post)
+        } else {
+          invisibleMentions.push(post)
+        }
+      }
 
-        console.log(gossip.length)
-      fs.writeFileSync(`./gossip.json`, JSON.stringify(gossip));
+      // Find invisible gossip
+      let allGossip = []
+      let gossipWords = [
+        "copied", "plagiarized", "banned",
+        "always", "never", "acts", "likes", "loves", "hates", "is", "was", "isn't", "wasn't",
+       "must", "mustn't", "might", "should", "shouldn't", "could", "couldn't", "would", "wouldn't",
+       "has", "had", "hasn't", "hadn't", "got", "get",
+      "said", "says", "tell", "told"]
+      for (let post of invisibleMentions) {
+        let content = post.content
+        let sentences = content.split(".")
+        for (let sentence of sentences) {
+          // Capture the second word of the sentence
+          let matchThis = new RegExp(`\\b(${myNick}|${mostPopularPronoun}) (\\w+)\\b`, "i")
+          let match = sentence.match(matchThis)
+          if (match) {
+            let secondWord = match[0].split(" ")[1]
+            let index = gossipWords.indexOf(secondWord)
+            if (index > -1) {
+              allGossip.push({
+                content: sentence,
+                author: post.authorKaid,
+                score: 1000 / (index + 1) + post.upvotes,
+              })
+            }
+          }
+        }
+      }
+      // Sort by score
+      allGossip.sort((a, b) => b.score - a.score)
+      let gossip = allGossip.slice(0, 3)
+      for (let i = 0; i < allGossip.length; i ++) {
+        if (i < 3) {
+          let json = await fetchKA("profile", allGossip[i].author)
+          allGossip[i].nickname = json.data?.user?.nickname || "Unknown"
+        } else {
+          allGossip[i].nickname = allGossip[i].author
+        }
+        allGossip[i].formatted = `- *${allGossip[i].content}* by [${allGossip[i].nickname}](https://www.khanacademy.org/profile/${allGossip[i].author})`
+      }
+      let invisibleGossip = allGossip.slice(3).join("\n")
+
+
+
+
+      /// DEBUGGING
+      ////////////////////////////
+      fs.writeFileSync(`./temp/gossip.txt`, invisibleGossip);
+      fs.writeFileSync(`./temp/known.json`, JSON.stringify(visibleMentions));
+      fs.writeFileSync(`./temp/a.json`, JSON.stringify({
+        invisibleMentions: invisibleMentions.length,
+        visibleMentions: visibleMentions.length,
+      }));
     } 
 
 
@@ -144,13 +235,13 @@ export default {
     let sectionAbout = `${myNick} is a ${praises} person.${roleplayBlurb} It appears that ${myNick}'s pronouns are ${pronounGrammar[mostPopularPronoun]} (${pronounPercent}%) based on what his friends say. But let's see what your friends really have to say about you, ${myNick}:`
 
     let sectionGossip = hasGossip ? `${invisibleGossip}
-    Your friends mentioned you ${visibleMentions + invisibleMentions} times and talked behind your back ${invisibleMentions} times! It looks like you go by your ${isGoByNickname ? "nickname" : "username"} more than your ${isGoByNickname ? "username" : "nickname"}, but I've included both cases in the file \`gossip.json\` attached below.`
+    Your friends mentioned you ${allMentions.length} times and talked behind your back ${invisibleMentions.length} times! It looks like you go by your ${isGoByNickname ? "nickname" : "username"} more than your ${isGoByNickname ? "username" : "nickname"}, but I've included both cases in the file \`gossip.txt\` attached below.`
     :
     `It doesn't look like you're very popular, ${myNick}. You've never been mentioned by your friends - oh wait, you don't have any!`
 
     let sectionPatterns = `You created your account an impressive ${accountAge} years ago! Since then, you've commented ${numOfComments} times on the top programs.${notMuchCommentsBlurb} Most notably, you ${askVsAnswer}. That's ${askVsAnswerHigher}% higher than average. You should be proud of youself for ${reasonToBeProud}!`
 
-    let sectionFriends = hasFriends ? `Now for the fun part... I estimate that you have ${numOfFriends} friends on Khan Academy. The full list is in the file \`friends.json\`. However, your friends talk more often than you, so maybe they aren't real friends. Some of your best friends are ${bestFriends}.`
+    let sectionFriends = hasFriends ? `Now for the fun part... I estimate that you have ${numOfFriends} friends on Khan Academy. The full list is in the file \`friends.txt\`. However, your friends talk more often than you, so maybe they aren't real friends. Some of your best friends are ${bestFriends}.`
     :
     `You don't have any friends on Khan Academy. What a loser.`
 
@@ -165,7 +256,7 @@ ${sectionAbout}
 **Gossip**
 ${sectionGossip}
 
-** Patterns**
+**Patterns**
 ${sectionPatterns}
 
 **Friends**

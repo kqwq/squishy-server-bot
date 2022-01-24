@@ -24,7 +24,7 @@ for (const file of commandFiles) {
 }
 
 // Load sqlite3 database
-const db = new sqlite3.Database('./storage/tt.db', (err) => {
+const db = new sqlite3.Database('./storage/vacuumed.db', (err) => {
   if (err) {
     return console.error(err.message);
   }
@@ -43,7 +43,7 @@ client.on('ready', async () => {
 
   //Register local slash commands
   await rest.put(
-    Routes.applicationGuildCommands(process.env.CLIENT_ID, "910970288580206622"),
+    Routes.applicationGuildCommands(process.env.CLIENT_ID, "372895163279998976"),
     { body: slashCommands },
   );
 
