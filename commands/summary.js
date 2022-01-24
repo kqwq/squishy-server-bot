@@ -38,9 +38,9 @@ export default {
     let myNick = myProfile.nickname
 
     /* About */
-    let myPosts = await allQuery(db, `SELECT * FROM posts WHERE authorKaid = '${myKaid}0 LIMIT 50000'`);
-    let nickMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%[^a-z]${myNick}[^a-z]%' LIMIT 25000`);
-    let usernameMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%[^a-z]${myUsername}[^a-z]%' LIMIT 25000`);
+    let myPosts = await allQuery(db, `SELECT * FROM posts WHERE authorKaid = '${myKaid}' LIMIT 50000`);
+    let nickMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%${myNick}%' LIMIT 25000`);
+    let usernameMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%${myUsername}%' LIMIT 25000`);
     let allMentions = nickMentions.concat(usernameMentions).sort((a, b) => b.upvotes - a.upvotes);
     // Pronoun classifier
     let pronouns = {
@@ -95,14 +95,15 @@ export default {
         notificationRoots.push(post.parentId ? post.parentId : post.id)
       }
       notificationRoots = [...new Set(notificationRoots)]
-
-      // Select every post with a parentId or id of the notificationRoots, but don't include posts that myKaid is the author of AND don't include posts where myKaid is the author of a reply
+      console.log(notificationRoots)
+      // Select every post that mentions myKaid, but exclude the ones where I'm the author
       let gossip = await allQuery(db, 
         `SELECT * FROM posts 
-        WHERE (parentId IN (${notificationRoots.join(',')}) OR id IN (${notificationRoots.join(',')})) 
-        AND authorKaid != '${myKaid}' 
-        AND '${myKaid}' NOT IN (SELECT authorKaid FROM posts WHERE parentId = '${myKaid}') 
-        LIMIT 25000`);
+        WHERE (content LIKE '%${myNick}%' OR content LIKE '%${myUsername}%')  
+        AND parentId NOT IN (${notificationRoots.join(',')})
+        AND id NOT IN (${notificationRoots.join(',')})`)
+        
+
         console.log(gossip.length)
       fs.writeFileSync(`./gossip.json`, JSON.stringify(gossip));
     } 
@@ -137,7 +138,7 @@ export default {
     let friendships = kaidCounts.filter(item => item.count > 1);
     let top3 = friendships.slice(0, 3);
     let usernames = await Promise.all(top3.map(item => fetchProxy(`profile`, item.kaid).then(res => res.json()).then(json => json.data.user.username)));
-    let reply = `${userInupt} has a crush on ${usernames.join(', ')}.`;
+   // let reply = `${userInupt} has a crush on ${usernames.join(', ')}.`;
 
     // Compile sections
     let sectionAbout = `${myNick} is a ${praises} person.${roleplayBlurb} It appears that ${myNick}'s pronouns are ${pronounGrammar[mostPopularPronoun]} (${pronounPercent}%) based on what his friends say. But let's see what your friends really have to say about you, ${myNick}:`
