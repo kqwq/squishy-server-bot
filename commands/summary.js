@@ -15,7 +15,7 @@ export default {
       required: true
     }],
   },
-    
+
   callback: async (interaction, args, client, db) => {
     await interaction.deferReply();
 
@@ -28,7 +28,7 @@ export default {
     let usernameInupt = args.getString('username')
     let res = await fetchProxy(`profile`, usernameInupt);
     let json = await res.json();
-    let myProfile = json.data?.user 
+    let myProfile = json.data?.user
     if (!myProfile) {
       interaction.editReply("Couldn't find the user " + usernameInupt);
       return
@@ -36,6 +36,7 @@ export default {
     let myKaid = myProfile.id
     let myUsername = myProfile.username
     let myNick = myProfile.nickname
+    let files = []
 
     /* About */
     let praises = []
@@ -43,16 +44,14 @@ export default {
     let nickMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%${myNick}%' LIMIT 25000`);
     let usernameMentions = await allQuery(db, `SELECT * FROM posts WHERE content LIKE '%${myUsername}%' LIMIT 25000`);
     let allMentions = nickMentions.concat(usernameMentions).sort((a, b) => b.upvotes - a.upvotes);
-    if (allMentions.length > 50) {
+    if (allMentions.length > 100) {
       praises.push("famous")
-    } else if (allMentions.length > 25) {
+    } else if (allMentions.length > 50) {
       praises.push("popular")
     } else if (allMentions.length > 10) {
       praises.push("respected")
-    } else if (allMentions.length > 5) {
-      praises.push("normal")
-    } else if (allMentions.length > 1) {
-      praises.push("helpful")
+    } else if (allMentions.length > 2) {
+      praises.push("average")
     } else {
       praises.push("lonely")
     }
@@ -67,6 +66,11 @@ export default {
       "he": "he/him",
       "she": "she/her",
       "they": "they/them",
+    }
+    let possessiveGrammar = {
+      "he": "his",
+      "she": "her",
+      "they": "their",
     }
     let numOfPronouns = 0;
     for (let i = 0; i < allMentions.length; i++) {
@@ -98,10 +102,10 @@ export default {
     // Cringe classifier
     let criteria = (p) => {
       return p.content.split("*").length >= 4 && // Contains expressions
-      p.content.length / p.content.split("\n").length < 40 && // Many line breaks
-      !p.content.includes("function()") && // Not code
-      !p.content.includes("var ") &&
-      !p.content.includes("https://www.")  // No links
+        p.content.length / p.content.split("\n").length < 40 && // Many line breaks
+        !p.content.includes("function()") && // Not code
+        !p.content.includes("var ") &&
+        !p.content.includes("https://www.")  // No links
     }
     let cringePosts = myPosts.filter(criteria)
     let cringeSum = cringePosts.length;
@@ -111,10 +115,12 @@ export default {
       isCringe = true;
       praises.push("cringe-worthy")
       roleplayBlurb = `I say cringe-worthy because ${cringeSum}/${myPosts.length}, or ${Math.round(cringeSum / myPosts.length * 100)}% of your discussion is classified as roleplay! :pensive:`
-      fs.writeFileSync(`./temp/cringe.json`, cringePosts.map(p => p.content).join("\n\n\n"));
-    } 
+      fs.writeFileSync(`./temp/cringe.txt`, cringePosts.map(p => p.content).join("\n\n\n"))
+      files.push(new MessageAttachment("./temp/cringe.txt", "cringe.txt"))
+    }
+    console.log("cringeSum", cringeSum, "myPosts.length", myPosts.length)
 
-    
+
     /* Gossip */
     let visibleMentions = []
     let invisibleMentions = []
@@ -132,7 +138,7 @@ export default {
         myRoots.push(myPost.parentId ? myPost.parentId : myPost.id)
       }
       myRoots = [...new Set(myRoots)]
-      
+
       for (let post of allMentions) {
         let mentionRoot = post.parentId ? post.parentId : post.id
         if (myRoots.includes(mentionRoot)) {
@@ -147,223 +153,247 @@ export default {
       let gossipWords = [
         "copied", "plagiarized", "banned",
         "always", "never", "acts", "likes", "loves", "hates", "is", "was", "isn't", "wasn't",
-       "must", "mustn't", "might", "should", "shouldn't", "could", "couldn't", "would", "wouldn't",
-       "has", "had", "hasn't", "hadn't", "got", "get",
-      "said", "says", "tell", "told"]
+        "must", "mustn't", "might", "should", "shouldn't", "could", "couldn't", "would", "wouldn't",
+        "has", "had", "hasn't", "hadn't", "got", "get",
+        "said", "says", "tell", "told"]
       for (let post of invisibleMentions) {
         let content = post.content
         let sentences = content.split(".")
         for (let sentence of sentences) {
           // Capture the second word of the sentence
-          let matchThis = new RegExp(`\\b(${myNick}|${mostPopularPronoun}) (\\w+)\\b`, "i")
+          let matchThis = new RegExp(`\\b(${myNick}|${myUsername}) (\\w+)\\b`, "gi")
           let match = sentence.match(matchThis)
           if (match) {
             let secondWord = match[0].split(" ")[1]
             let index = gossipWords.indexOf(secondWord)
             if (index > -1) {
               allGossip.push({
-                content: sentence,
+                content: sentence.trim(),
                 author: post.authorKaid,
-                score: 1000 / (index + 1) + post.upvotes,
+                score: 100000 / (index + 1) + post.upvotes,
+              })
+            } else {
+              allGossip.push({
+                content: sentence.trim(),
+                author: post.authorKaid,
+                score: post.upvotes,
               })
             }
           }
         }
       }
-      // Sort by score
-      allGossip.sort((a, b) => b.score - a.score)
-      let gossip = allGossip.slice(0, 3)
-      for (let i = 0; i < allGossip.length; i ++) {
-        if (i < 3) {
-          let json = await fetchKA("profile", allGossip[i].author)
-          allGossip[i].nickname = json.data?.user?.nickname || "Unknown"
-        } else {
-          allGossip[i].nickname = allGossip[i].author
+        // Sort by score
+        allGossip.sort((a, b) => b.score - a.score)
+        for (let i = 0; i < allGossip.length; i++) {
+          if (i < 3) {
+            let json = await fetchKA("profile", allGossip[i].author)
+            allGossip[i].nickname = json.data?.user?.nickname || "Unknown"
+          } else {
+            allGossip[i].nickname = allGossip[i].author
+          }
+          allGossip[i].formatted = `- *${allGossip[i].content}* by [${allGossip[i].nickname}](https://www.khanacademy.org/profile/${allGossip[i].author})`
         }
-        allGossip[i].formatted = `- *${allGossip[i].content}* by [${allGossip[i].nickname}](https://www.khanacademy.org/profile/${allGossip[i].author})`
+        invisibleGossip = allGossip.slice(0, 3).map(g => g.formatted).join("\n")
+
+        fs.writeFileSync(`./temp/gossip.txt`, allGossip.map(p => p.formatted).join("\n\n\n"))
+        files.push(new MessageAttachment("./temp/gossip.txt", "gossip.txt"))
+
+        /// DEBUGGING
+        ////////////////////////////
+        // fs.writeFileSync(`./temp/gossip.txt`, invisibleGossip);
+        // fs.writeFileSync(`./temp/known.json`, JSON.stringify(visibleMentions));
+        // fs.writeFileSync(`./temp/a.json`, JSON.stringify({
+        //   invisibleMentions: invisibleMentions.length,
+        //   visibleMentions: visibleMentions.length,
+        // }));
       }
-      invisibleGossip = allGossip.slice(3).join("\n")
 
+      /* Patterns */
 
+      // Account age
+      let accountDays = Math.round((new Date() - new Date(myProfile.joined)) / (1000 * 60 * 60 * 24));
+      let accountYears = Math.round(accountDays / 365);
 
-      /// DEBUGGING
-      ////////////////////////////
-      fs.writeFileSync(`./temp/gossip.txt`, invisibleGossip);
-      fs.writeFileSync(`./temp/known.json`, JSON.stringify(visibleMentions));
-      fs.writeFileSync(`./temp/a.json`, JSON.stringify({
-        invisibleMentions: invisibleMentions.length,
-        visibleMentions: visibleMentions.length,
-      }));
-    } 
+      // Posts
+      let notMuchCommentsBlurb = ""
+      if (myPosts.length < 10) {
+        notMuchCommentsBlurb = " Honestly that's not a lot, maybe you should comment more often :smirk:."
+      }
 
-    /* Patterns */
-
-    // Account age
-    let accountDays = Math.round((new Date() - new Date(myProfile.joined)) / (1000 * 60 * 60 * 24));
-    let accountYears = Math.round(accountDays / 365);
-
-    // Posts
-    let notMuchCommentsBlurb = ""
-    if (myPosts.length < 10) {
-      notMuchCommentsBlurb = " Honestly that's not a lot, maybe you should comment more often :smirk:."
-    }
-
-    // askVsAnswer
-    let questionCount = 86897
-    let answerCount = 29228
-    let overallRatio = questionCount / answerCount
-    let askVsAnswer = ""
-    let askVsAnswerHigher = false
-    let reasonToBeProud = ""
-    let myQuestionsLength = myPosts.filter(p => p.type === "question").length
-    let myAnswersLength = myPosts.filter(p => p.type === "answer").length
-    let myRatio = myQuestionsLength / myAnswersLength
-    if (myRatio >= overallRatio && myQuestionsLength > 2) {
-      praises.push("curious")
-      reasonToBeProud = "You have such an open mind"
-      askVsAnswer = `asked questions ${(myAnswersLength/myQuestionsLength).toFixed(1)} as often as you answered them`
-      askVsAnswerHigher = ((myRatio - overallRatio) * 100).toFixed(0)
-    } else if (myRatio < overallRatio && myAnswersLength > 2) {
-      praises.push("altruistic")
-      reasonToBeProud = "You should be proud of yourself for providing so many helpful answers to the community"
-      askVsAnswer = `answered questions ${(myAnswersLength/myQuestionsLength).toFixed(1)} as often as you asked them`
-      askVsAnswerHigher = (1/(1/myRatio - 1/overallRatio) * 100).toFixed(0)
-    } else {
-      praises.push("observant")
-      reasonToBeProud = "You should help people out more often"
-      askVsAnswer = "didn't use the question/answer tab very often."
-    }
-
-
-    /* Get friends */
-    // Get list of your parent IDs from answers and replies
-    
-    let parentIds = myPosts.filter(r => r.type === "reply" || r.type === "answer").map(row => row.parentId);
-    parentIds = [...new Set(parentIds)];
-
-    // Get list of kaids 
-    let query = `SELECT authorKaid FROM posts WHERE (type = 'question' OR type = 'comment') AND id IN (${parentIds.join(',')})`;
-    let rows = await allQuery(db, query);
-    let kaids = rows.map(row => row.authorKaid);
-    let kaidCounts = []
-    kaids.forEach(kaid => {
-      let match = kaidCounts.find(item => item.kaid === kaid);
-      if (match) {
-        match.count++;
+      // askVsAnswer
+      let questionCount = 86897
+      let answerCount = 29228
+      let overallRatio = questionCount / answerCount
+      let askVsAnswer = ""
+      let askVsAnswerHigher = false
+      let reasonToBeProud = ""
+      let myQuestionsLength = myPosts.filter(p => p.type === "question").length
+      let myAnswersLength = myPosts.filter(p => p.type === "answer").length
+      let myRatio = myQuestionsLength / myAnswersLength
+      if (myRatio >= overallRatio && myQuestionsLength > 2) {
+        praises.push("curious")
+        reasonToBeProud = "You have such an open mind"
+        askVsAnswer = `asked questions ${(myAnswersLength / myQuestionsLength).toFixed(1)} as often as you answered them`
+        askVsAnswerHigher = ((myRatio - overallRatio) * 100).toFixed(0)
+      } else if (myRatio < overallRatio && myAnswersLength > 2) {
+        praises.push("altruistic")
+        reasonToBeProud = "You should be proud of yourself for providing so many helpful answers to the community"
+        askVsAnswer = `answered questions ${(myAnswersLength / myQuestionsLength).toFixed(1)} as often as you asked them`
+        askVsAnswerHigher = (1 / (1 / myRatio - 1 / overallRatio) * 100).toFixed(0)
       } else {
-        kaidCounts.push({
-          kaid: kaid,
-          count: 1
-        });
+        praises.push("observant")
+        reasonToBeProud = "You should help people out more often"
+        askVsAnswer = "didn't use the Questions tab very often.."
       }
-    });
-    kaidCounts.sort((a, b) => b.count - a.count);
 
-    // Gather stats
-    let friendships = kaidCounts.filter(item => item.count > 1);
-    let hasFriends = friendships.length > 0;
-    let bestFriendsTxt = ""
-    if (hasFriends) {
-      let top3 = friendships.slice(1, 4);
-      let usernames = await Promise.all(top3.map(item => fetchProxy(`profile`, item.kaid).then(res => res.json())
-      .then(json => `[${json.data?.user?.nickname || "unknown"}](https://www.khanacademy.org/profile/${json.data?.user?.id})`)));
-      bestFriendsTxt = `Some of your best friends are ${usernames.join(', ')}`;
-      fs.writeFileSync(`./temp/bestFriends.txt`, friendships.map(item => `${item.kaid} ${item.count}`).join('\n'));
-    }
-
-    /* Crush */
-    let crush = friendships?.[0]
-    let hasCrush= crush.count > 10
-    let crushEarlyContact = new Date()
-    let crushNickname
-    let crushRatio
-    if (hasCrush) {
-      for (let row of rows) {
-        let date = new Date(row.date)
-        if (date < crushEarlyContact) {
-          crushEarlyContact = date
+      // Year stats
+      let yearStats = ""
+      let yearsPosted = {}
+      for (let post of myPosts) {
+        let postYear = new Date(post.date).getFullYear()
+        if (yearsPosted[postYear]) {
+          yearsPosted[postYear]++
+        } else {
+          yearsPosted[postYear] = 1
         }
       }
-      crushEarlyContact = `${crushEarlyContact.getMonth} ${crushEarlyContact.getDate}, ${crushEarlyContact.getFullYear}`
-      let crushJson = await fetchKA(`profile`, crush.kaid)
-      crushNickname = crushJson.data?.user?.nickname || crush.kaid
-      let friendInteractions = friendships.reduce((acc, item) => acc + item.count, 0)
-      let crushInteractions = crush.count
-      crushRatio = crushInteractions / friendInteractions
-    }
+      let years = Object.keys(yearsPosted)
+      yearStats = years.map(year => `**${year}**: ${yearsPosted[year]} posts`).join("\n")
 
-    /* Leaks */
-    let emails = []
-    for (let post of myPosts) {
-      // Check for email string
-      let matches = post.content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g)
-      matches?.forEach(email => {
-        emails.push(email)
-      })
-    }
-    let leakBlurb = ""
-    if (emails.length > 0) {
-      leakBlurb = `P.S. You've leaked ${emails.length} emails. You should probably hide them.`
-    }
 
-    
-    
+      /* Get friends */
+      // Get list of your parent IDs from answers and replies
 
-    // Compile sections
-    let sectionAbout = `${myNick} is a ${praises} person.${roleplayBlurb} It appears that ${myNick}'s pronouns are ${pronounGrammar[mostPopularPronoun]} (${pronounPercent}%) based on what his friends say. But let's see what your friends really have to say about you, ${myNick}:`
+      let parentIds = myPosts.filter(r => r.type === "reply" || r.type === "answer").map(row => row.parentId);
+      parentIds = [...new Set(parentIds)];
 
-    let sectionGossip = hasGossip ? `${invisibleGossip}
-    Your friends mentioned you ${allMentions.length} times and talked behind your back ${invisibleMentions.length} times! It looks like you go by your ${isGoByNickname ? "nickname" : "username"} more than your ${isGoByNickname ? "username" : "nickname"}, but I've included both cases in the file \`gossip.txt\` attached below.`
-    :
-    `It doesn't look like you're very popular, ${myNick}. You've never been mentioned by your friends - oh wait, you don't have any!`
+      // Get list of kaids 
+      let query = `SELECT authorKaid FROM posts WHERE (type = 'question' OR type = 'comment') AND id IN (${parentIds.join(',')})`;
+      let rows = await allQuery(db, query);
+      let kaids = rows.map(row => row.authorKaid);
+      let kaidCounts = []
+      kaids.forEach(kaid => {
+        let match = kaidCounts.find(item => item.kaid === kaid);
+        if (match) {
+          match.count++;
+        } else {
+          kaidCounts.push({
+            kaid: kaid,
+            count: 1
+          });
+        }
+      });
+      kaidCounts.splice(kaidCounts.findIndex(item => item.kaid === myKaid), 1);
+      kaidCounts.sort((a, b) => b.count - a.count);
 
-    let sectionPatterns = `You created your account an impressive ${accountYears} years ago! Since then, you've commented ${myPosts.length.toLocaleString()} times on the top programs.${notMuchCommentsBlurb} Most notably, you ${askVsAnswer}. ${askVsAnswerHigher ? `That's ${askVsAnswerHigher}% higher than average.` : ""} ${reasonToBeProud}!`
+      // Gather stats
+      let friendships = kaidCounts.filter(item => item.count > 1);
+      let hasFriends = friendships.length > 0;
+      let bestFriendsTxt = ""
+      if (hasFriends) {
+        let top3 = friendships.slice(1, 4);
+        let usernames = await Promise.all(top3.map(item => fetchProxy(`profile`, item.kaid).then(res => res.json())
+          .then(json => `[${json.data?.user?.nickname || "unknown"}](https://www.khanacademy.org/profile/${json.data?.user?.id})`)));
+        bestFriendsTxt = `Some of your best friends are ${usernames.join(', ')}`;
+      }
 
-    let sectionFriends = hasFriends ? `Now for the fun part... I estimate that you have ${friendships.length} friends on Khan Academy. The full list is in the file \`friends.txt\`. However, your friends talk more often than you, so maybe they aren't real friends. ${bestFriendsTxt}.`
-    :
-    `You don't have any friends on Khan Academy. What a loser.`
+      /* Crush */
+      let crush = friendships?.[0]
+      let hasCrush = crush && crush.count > 10
+      let crushEarlyContact = new Date()
+      let crushNickname
+      let crushRatio
+      if (hasCrush) {
+        for (let row of rows) {
+          let date = new Date(row.date)
+          if (date.getTime() < crushEarlyContact.getTime()) {
+            crushEarlyContact = date
+          }
+        }
+        let monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        crushEarlyContact = `${monthNames[crushEarlyContact.getMonth()]} ${crushEarlyContact.getDate()}, ${crushEarlyContact.getFullYear()}`
+        let crushJson = await fetchKA(`profile`, crush.kaid)
+        crushNickname = crushJson.data?.user?.nickname || crush.kaid
+        let friendInteractions = friendships.reduce((acc, item) => acc + item.count, 0)
+        let crushInteractions = crush.count
+        crushRatio = crushInteractions / friendInteractions
+      }
 
-    let sectionCrush = hasCrush ? `Finally, ${myNick}'s Khan Academy crush. My calculations say there's a ${Math.floor(crushRatio * 100)}% chance you have a crush on ${crushNickname}! How cute! You've known each other since ${crushEarlyContact} and have exchanged conversations well over 50 times!` 
-    : 
-    `My calculations say there's a ${Math.floor(crushRatio * 100)}% chance you have a Khan Academy crush. That's right, you probably don't have a crush on anyone. What a shame!`
-  
-    let desc = `
+      /* Leaks */
+      let emails = []
+      for (let post of myPosts) {
+        // Check for email string
+        let matches = post.content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g)
+        matches?.forEach(email => {
+          emails.push(email)
+        })
+      }
+      let leakBlurb = ""
+      if (emails.length > 0) {
+        leakBlurb = `\nP.S. You've leaked ${emails.length} emails. You should probably hide them.`
+        fs.writeFileSync(`./temp/leakedEmails.txt`, emails.join('\n'))
+        files.push(new MessageAttachment(`./temp/leakedEmails.txt`, "leakedEmails.txt"))
+      }
+
+      // Oxford comma for last item
+      let praisesTxt = praises.slice(0, -1).join(', ') + ` and ${praises.slice(-1)}`
+
+      // Compile sections
+      let sectionAbout = `${myNick} is a ${praisesTxt} Khan Academy user.${roleplayBlurb} It appears that ${myNick}'s pronouns are ${pronounGrammar[mostPopularPronoun]} (${pronounPercent}%) based on what ${possessiveGrammar[mostPopularPronoun]} friends say. But let's see what your friends really have to say about you, ${myNick}.`
+
+      let sectionGossip = hasGossip ? `${invisibleGossip}
+    Out of the ${allMentions.length.toLocaleString()} times you were mentioned, your friends talked behind your back on ${invisibleMentions.length.toLocaleString()} separate occasions! It looks like you go by your ${isGoByNickname ? "nickname" : "username"} more than your ${isGoByNickname ? "username" : "nickname"}, but I've included both cases in the file \`gossip.txt\` attached below.`
+        :
+        `It doesn't look like you're very popular, ${myNick}. You've never been mentioned by your friends - oh wait, you don't have any!`
+
+      let sectionPatterns = `You created your account an impressive ${accountYears} years ago! Since then, you've commented ${myPosts.length.toLocaleString()} times on the top programs.${notMuchCommentsBlurb} Most notably, you ${askVsAnswer}. ${askVsAnswerHigher ? `That's ${askVsAnswerHigher}% higher than average.` : ""} ${reasonToBeProud}! Here's a yearly breakdown of your posts:\n${yearStats}`
+
+      let sectionFriends = hasFriends ? `Now for the fun part... I estimate that you have ${friendships.length} friends on Khan Academy. However, your friends talk more often than you, so maybe they aren't real friends. ${bestFriendsTxt}.`
+        :
+        `You don't have any friends on Khan Academy. What a loser.`
+
+      let sectionCrush = hasCrush ? `Finally, ${myNick}'s Khan Academy crush. My calculations say there's a ${Math.floor(Math.min(100, crushRatio * 100 * 3))}% chance you have a crush on ||${crushNickname}||! How cute! You've known each other since ${crushEarlyContact} and have exchanged messages well over ${crush.count} times!`
+        :
+        `My calculations say there's a ${Math.floor(crushRatio * 100)}% chance you have a Khan Academy crush. That's right, you probably don't have a crush on anyone. What a shame!`
+
+      let desc = `
 **About**
 ${sectionAbout}
 
 **Gossip**
 ${sectionGossip}
 
-**Patterns**
+**Stats**
 ${sectionPatterns}
 
 **Friends**
 ${sectionFriends}
 
-**Crush**
+**Your KA Crush**
 ${sectionCrush}
 ${leakBlurb}`;
 
-    // Create embed
-    let embed = new MessageEmbed({
-      title: 'Summary for ' + myNick,
-      description: desc,
-    })
-    //let files = []
+      // Create embed
+      let embed = new MessageEmbed({
+        title: 'Summary for ' + myNick,
+        description: desc,
+      })
+  
+   
 
 
-    // Send message
-    interaction.editReply("Send via DMs");
+      // Send message
+      interaction.editReply("Send via DMs");
 
 
-    
-    // Send to DMs
-    await interaction.member.send({
-      embeds: [embed],
-     // files: [files]
-    })
+
+      // Send to DMs
+      await interaction.member.send({
+        embeds: [embed],
+        files: files.length > 0 ? files : undefined
+      })
 
 
-    
+
+    }
   }
-}
