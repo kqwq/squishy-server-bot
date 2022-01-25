@@ -4,4 +4,5 @@ storage/avatar/*
 !storage/avatar/deleted.png
 storage/example.png
 storage/*.db
-temp
+temp/*
+!temp/.gitkeep
