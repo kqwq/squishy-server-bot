@@ -43,7 +43,7 @@ client.on('ready', async () => {
 
   //Register local slash commands
   await rest.put(
-    Routes.applicationGuildCommands(process.env.CLIENT_ID, "372895163279998976"),
+    Routes.applicationGuildCommands(process.env.CLIENT_ID, "910970288580206622"),
     { body: slashCommands },
   );
 
