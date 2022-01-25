@@ -87,7 +87,7 @@ export default {
         numOfPronouns++;
       }
     }
-    let mostPopularPronoun = pronouns.they > pronouns.he ? "they" : (pronouns.he > pronouns.she ? "he" : "she")
+    let mostPopularPronoun = pronouns.they >= pronouns.he ? "they" : (pronouns.he > pronouns.she ? "he" : "she")
     let pronounCount = pronouns[mostPopularPronoun];
     let pronounPercent = Math.round(pronounCount / numOfPronouns * 100);
 
@@ -96,7 +96,6 @@ export default {
       "mostPopularPronoun": mostPopularPronoun,
       "pronounCount": pronounCount,
       "pronounPercent": pronounPercent,
-
     }));
 
     // Cringe classifier
@@ -111,7 +110,7 @@ export default {
     let cringeSum = cringePosts.length;
     let roleplayBlurb = ""
     let isCringe = false;
-    if (cringeSum > myPosts.length / 4) {
+    if (cringeSum > myPosts.length / 10) {
       isCringe = true;
       praises.push("cringe-worthy")
       roleplayBlurb = `I say cringe-worthy because ${cringeSum}/${myPosts.length}, or ${Math.round(cringeSum / myPosts.length * 100)}% of your discussion is classified as roleplay! :pensive:`
@@ -194,9 +193,13 @@ export default {
           allGossip[i].formatted = `- *${allGossip[i].content}* by [${allGossip[i].nickname}](https://www.khanacademy.org/profile/${allGossip[i].author})`
         }
         invisibleGossip = allGossip.slice(0, 3).map(g => g.formatted).join("\n")
+        if (allGossip.length === 0) {
+          hasGossip = false
+        } else {
 
-        fs.writeFileSync(`./temp/gossip.txt`, allGossip.map(p => p.formatted).join("\n\n\n"))
-        files.push(new MessageAttachment("./temp/gossip.txt", "gossip.txt"))
+          fs.writeFileSync(`./temp/gossip.txt`, allGossip.map(p => p.formatted).join("\n\n\n"))
+          files.push(new MessageAttachment("./temp/gossip.txt", "gossip.txt"))
+        }
 
         /// DEBUGGING
         ////////////////////////////
@@ -258,7 +261,7 @@ export default {
         }
       }
       let years = Object.keys(yearsPosted)
-      yearStats = years.map(year => `**${year}**: ${yearsPosted[year]} posts`).join("\n")
+      yearStats = years.map(year => `__${year}__ - ${yearsPosted[year].toLocaleString()} post${yearsPosted[year] == 1 ? "" : "s"}`).join("\n")
 
 
       /* Get friends */
@@ -272,12 +275,14 @@ export default {
       let rows = await allQuery(db, query);
       let kaids = rows.map(row => row.authorKaid);
       let kaidCounts = []
-      kaids.forEach(kaid => {
+      rows.forEach(({kaid, date}) => {
         let match = kaidCounts.find(item => item.kaid === kaid);
         if (match) {
           match.count++;
+          match.earliest = new Date(Math.min(match.earliest, date));
         } else {
           kaidCounts.push({
+            earliest: new Date(date),
             kaid: kaid,
             count: 1
           });
@@ -300,17 +305,12 @@ export default {
       /* Crush */
       let crush = friendships?.[0]
       let hasCrush = crush && crush.count > 10
-      let crushEarlyContact = new Date()
+      let crushEarlyContact = ""
       let crushNickname
       let crushRatio
       if (hasCrush) {
-        for (let row of rows) {
-          let date = new Date(row.date)
-          if (date.getTime() < crushEarlyContact.getTime()) {
-            crushEarlyContact = date
-          }
-        }
         let monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        crushEarlyContact = new Date(crush.earliest)
         crushEarlyContact = `${monthNames[crushEarlyContact.getMonth()]} ${crushEarlyContact.getDate()}, ${crushEarlyContact.getFullYear()}`
         let crushJson = await fetchKA(`profile`, crush.kaid)
         crushNickname = crushJson.data?.user?.nickname || crush.kaid
@@ -350,11 +350,11 @@ export default {
 
       let sectionFriends = hasFriends ? `Now for the fun part... I estimate that you have ${friendships.length} friends on Khan Academy. However, your friends talk more often than you, so maybe they aren't real friends. ${bestFriendsTxt}.`
         :
-        `You don't have any friends on Khan Academy. What a loser.`
+        `Oh noes! It doesn't look like you have friends on Khan Academy.`
 
       let sectionCrush = hasCrush ? `Finally, ${myNick}'s Khan Academy crush. My calculations say there's a ${Math.floor(Math.min(100, crushRatio * 100 * 3))}% chance you have a crush on ||${crushNickname}||! How cute! You've known each other since ${crushEarlyContact} and have exchanged messages well over ${crush.count} times!`
         :
-        `My calculations say there's a ${Math.floor(crushRatio * 100)}% chance you have a Khan Academy crush. That's right, you probably don't have a crush on anyone. What a shame!`
+        `My calculations say there's a 0% chance you have a Khan Academy crush. That's right, you probably don't have a crush on anyone. What a shame!`
 
       let desc = `
 **About**
